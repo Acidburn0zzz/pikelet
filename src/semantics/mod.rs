@@ -5,11 +5,11 @@
 //! For more information, check out the theory appendix of the Pikelet book.
 
 use codespan::ByteSpan;
-use nameless::{self, BoundTerm, Embed, Name, Var};
+use nameless::{self, BoundPattern, BoundTerm, Embed, Name, Var};
 use std::rc::Rc;
 
-use syntax::core::{Constant, Context, Definition, Level, Module, Neutral, RawConstant, RawModule,
-                   RawTerm, Term, Type, Value};
+use syntax::core::{Constant, Context, Definition, Label, Level, Module, Neutral, RawConstant,
+                   RawModule, RawTerm, Term, Type, Value};
 use syntax::translation::ToConcrete;
 
 mod errors;
@@ -143,19 +143,23 @@ pub fn normalize(context: &Context, term: &Rc<Term>) -> Result<Rc<Value>, Intern
         },
 
         // E-RECORD-TYPE
-        Term::RecordType(_, ref label, ref ann, ref rest) => {
-            let ann = normalize(context, ann)?;
-            let rest = normalize(context, rest)?;
+        Term::RecordType(_, ref scope) => {
+            let ((name, Embed(ann)), body) = nameless::unbind(scope.clone());
+            let ann = normalize(context, &ann)?;
+            let body_context = context.claim(name.0.clone(), ann.clone());
+            let body = normalize(&body_context, &body)?;
 
-            Ok(Rc::new(Value::RecordType(label.clone(), ann, rest)))
+            Ok(Value::RecordType(nameless::bind((name, Embed(ann)), body)).into())
         },
 
         // E-RECORD
-        Term::Record(_, ref label, ref expr, ref rest) => {
-            let expr = normalize(context, expr)?;
-            let rest = normalize(context, rest)?;
+        Term::Record(_, ref scope) => {
+            let ((name, Embed(term)), body) = nameless::unbind(scope.clone());
+            let value = normalize(context, &term)?;
+            let body_context = context.define(name.0.clone(), term.clone());
+            let body = normalize(&body_context, &body)?;
 
-            Ok(Rc::new(Value::Record(label.clone(), expr, rest)))
+            Ok(Value::Record(nameless::bind((name, Embed(value)), body)).into())
         },
 
         // E-EMPTY-RECORD-TYPE
@@ -252,15 +256,22 @@ pub fn check(
         },
 
         // C-RECORD
-        (
-            &RawTerm::Record(span, ref label, ref raw_expr, ref raw_rest),
-            &Value::RecordType(ref ty_label, ref ann, ref ty_rest),
-        ) => {
-            if label == ty_label {
-                let expr = check(context, &raw_expr, &ann)?;
-                let body = check(context, &raw_rest, &ty_rest)?;
+        (&RawTerm::Record(span, ref scope), &Value::RecordType(ref ty_scope)) => {
+            let ((label, Embed(expr)), body, (ty_label, Embed(ann)), ty_body) =
+                nameless::unbind2(scope.clone(), ty_scope.clone());
 
-                return Ok(Rc::new(Term::Record(span, label.clone(), expr, body)));
+            if Label::pattern_eq(&label, &ty_label) {
+                let expr = check(context, &expr, &ann)?;
+                let body = check(
+                    &context
+                        .claim(label.0.clone(), ann)
+                        .define(label.0.clone(), expr.clone()),
+                    &body,
+                    &ty_body,
+                )?;
+                let scope = nameless::bind((label, Embed(expr)), body);
+
+                return Ok(Rc::new(Term::Record(span, scope)));
             } else {
                 unimplemented!()
             }
@@ -372,9 +383,12 @@ pub fn infer(context: &Context, raw_term: &Rc<RawTerm>) -> Result<(Rc<Term>, Rc<
                 infer_universe(&context.claim(name.clone(), ann), &raw_body)?
             };
 
+            let scope = nameless::bind((name, Embed(ann)), body);
+            let level = cmp::max(ann_level, body_level);
+
             Ok((
-                Rc::new(Term::Pi(span, nameless::bind((name, Embed(ann)), body))),
-                Rc::new(Value::Universe(cmp::max(ann_level, body_level))),
+                Rc::new(Term::Pi(span, scope)),
+                Rc::new(Value::Universe(level)),
             ))
         },
 
@@ -440,34 +454,29 @@ pub fn infer(context: &Context, raw_term: &Rc<RawTerm>) -> Result<(Rc<Term>, Rc<
         },
 
         // I-RECORD-TYPE
-        RawTerm::RecordType(span, ref label, ref raw_ann, ref raw_rest) => {
-            // Check that rest of record type is well-formed?
-            // Might be able to skip that for now, because there's no way to
-            // express ill-formed records in the concrete syntax...
+        RawTerm::RecordType(span, ref raw_scope) => {
+            let ((label, Embed(raw_ann)), raw_body) = nameless::unbind(raw_scope.clone());
 
-            let (ann, ann_level) = infer_universe(context, &raw_ann)?;
-            let (rest, rest_level) = infer_universe(context, &raw_rest)?;
-
-            Ok((
-                Rc::new(Term::RecordType(span, label.clone(), ann, rest)),
-                Rc::new(Value::Universe(cmp::max(ann_level, rest_level))),
-            ))
-        },
-
-        // I-RECORD
-        RawTerm::Record(span, ref label, ref raw_expr, ref raw_rest) => {
             // Check that rest of record is well-formed?
             // Might be able to skip that for now, because there's no way to
             // express ill-formed records in the concrete syntax...
 
-            let (expr, ann) = infer(context, &raw_expr)?;
-            let (rest, ty_rest) = infer(context, &raw_rest)?;
+            let (ann, ann_level) = infer_universe(context, &raw_ann)?;
+            let (body, body_level) = {
+                let ann = normalize(context, &ann)?;
+                infer_universe(&context.claim(label.0.clone(), ann), &raw_body)?
+            };
+
+            let scope = nameless::bind((label, Embed(ann)), body);
+            let level = cmp::max(ann_level, body_level);
 
             Ok((
-                Rc::new(Term::Record(span, label.clone(), expr, rest)),
-                Rc::new(Value::RecordType(label.clone(), ann, ty_rest)),
+                Rc::new(Term::RecordType(span, scope)),
+                Rc::new(Value::Universe(level)),
             ))
         },
+
+        RawTerm::Record(span, _) => Err(TypeError::AmbiguousRecord { span: span.0 }),
 
         // I-EMPTY-RECORD-TYPE
         RawTerm::EmptyRecordType(span) => Ok((

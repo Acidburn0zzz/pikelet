@@ -263,25 +263,21 @@ impl ToConcrete<concrete::Term> for core::Term {
                     Box::new(if_false.to_concrete_prec(Prec::APP)),
                 ),
             ),
-            core::Term::RecordType(_, ref label, ref ann, ref rest) => {
+            core::Term::RecordType(_, ref scope) => {
                 let mut fields = vec![];
-                let mut label = label;
-                let mut ann = ann;
-                let mut rest = rest;
+                let mut scope = scope.clone();
 
                 loop {
+                    let ((label, Embed(expr)), body) = nameless::unbind(scope);
+
                     fields.push((
                         ByteIndex::default(),
-                        label.0.clone(),
-                        Box::new(ann.to_concrete_prec(Prec::NO_WRAP)),
+                        label.0.to_string(),
+                        Box::new(expr.to_concrete_prec(Prec::NO_WRAP)),
                     ));
 
-                    match **rest {
-                        core::Term::RecordType(_, ref next_label, ref next_ann, ref next_rest) => {
-                            label = next_label;
-                            ann = next_ann;
-                            rest = next_rest;
-                        },
+                    match *body {
+                        core::Term::RecordType(_, ref next_scope) => scope = next_scope.clone(),
                         core::Term::EmptyRecordType(_) => break,
                         _ => panic!("ill-formed record type"), // FIXME: better error
                     }
@@ -289,25 +285,21 @@ impl ToConcrete<concrete::Term> for core::Term {
 
                 concrete::Term::RecordType(ByteSpan::default(), fields)
             },
-            core::Term::Record(_, ref label, ref expr, ref rest) => {
+            core::Term::Record(_, ref scope) => {
                 let mut fields = vec![];
-                let mut label = label;
-                let mut expr = expr;
-                let mut rest = rest;
+                let mut scope = scope.clone();
 
                 loop {
+                    let ((label, Embed(expr)), body) = nameless::unbind(scope);
+
                     fields.push((
                         ByteIndex::default(),
-                        label.0.clone(),
+                        label.0.to_string(),
                         Box::new(expr.to_concrete_prec(Prec::NO_WRAP)),
                     ));
 
-                    match **rest {
-                        core::Term::Record(_, ref next_label, ref next_expr, ref next_rest) => {
-                            label = next_label;
-                            expr = next_expr;
-                            rest = next_rest;
-                        },
+                    match *body {
+                        core::Term::Record(_, ref next_scope) => scope = next_scope.clone(),
                         core::Term::EmptyRecord(_) => break,
                         _ => panic!("ill-formed record"), // FIXME: better error
                     }
@@ -322,7 +314,7 @@ impl ToConcrete<concrete::Term> for core::Term {
             core::Term::Proj(_, ref expr, _, ref label) => concrete::Term::Proj(
                 Box::new(expr.to_concrete_prec(Prec::ATOMIC)),
                 ByteIndex::default(),
-                label.0.clone(),
+                label.0.to_string(),
             ),
         }
     }

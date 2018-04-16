@@ -164,7 +164,7 @@ fn pretty_proj<E: ToDoc>(options: Options, expr: &E, label: &Label) -> StaticDoc
         Doc::nil()
             .append(expr.to_doc(options.with_prec(Prec::APP))) // ???
             .append(Doc::text("."))
-            .append(Doc::as_string(&label.0)),
+            .append(pretty_name(options, &label.0)),
     )
 }
 
@@ -240,26 +240,20 @@ impl ToDoc for RawTerm {
             RawTerm::If(_, ref cond, ref if_true, ref if_false) => {
                 pretty_if(options, cond, if_true, if_false)
             },
-            RawTerm::RecordType(_, ref label, ref ann, ref rest) => {
+            RawTerm::RecordType(_, ref scope) => {
                 let mut inner = Doc::nil();
-                let mut label = label;
-                let mut ann = ann;
-                let mut rest = rest;
+                let mut scope = scope;
 
                 loop {
                     inner = inner
-                        .append(Doc::as_string(&label.0))
+                        .append(pretty_name(options, &(scope.unsafe_pattern.0).0))
                         .append(Doc::space())
                         .append(Doc::text(":"))
                         .append(Doc::space())
-                        .append(ann.to_doc(options));
+                        .append((scope.unsafe_pattern.1).0.to_doc(options));
 
-                    match **rest {
-                        RawTerm::RecordType(_, ref next_label, ref next_ann, ref next_rest) => {
-                            label = next_label;
-                            ann = next_ann;
-                            rest = next_rest;
-                        },
+                    match *scope.unsafe_body {
+                        RawTerm::RecordType(_, ref next_scope) => scope = next_scope,
                         RawTerm::EmptyRecordType(_) => break,
                         _ => panic!("ill-formed record"),
                     }
@@ -267,26 +261,20 @@ impl ToDoc for RawTerm {
 
                 pretty_record_ty(inner)
             },
-            RawTerm::Record(_, ref label, ref expr, ref rest) => {
+            RawTerm::Record(_, ref scope) => {
                 let mut inner = Doc::nil();
-                let mut label = label;
-                let mut expr = expr;
-                let mut rest = rest;
+                let mut scope = scope;
 
                 loop {
                     inner = inner
-                        .append(Doc::as_string(&label.0))
+                        .append(pretty_name(options, &(scope.unsafe_pattern.0).0))
                         .append(Doc::space())
                         .append(Doc::text("="))
                         .append(Doc::space())
-                        .append(expr.to_doc(options));
+                        .append((scope.unsafe_pattern.1).0.to_doc(options));
 
-                    match **rest {
-                        RawTerm::Record(_, ref next_label, ref next_expr, ref next_rest) => {
-                            label = next_label;
-                            expr = next_expr;
-                            rest = next_rest;
-                        },
+                    match *scope.unsafe_body {
+                        RawTerm::Record(_, ref next_scope) => scope = next_scope,
                         RawTerm::EmptyRecord(_) => break,
                         _ => panic!("ill-formed record"),
                     }
@@ -324,26 +312,20 @@ impl ToDoc for Term {
             Term::If(_, ref cond, ref if_true, ref if_false) => {
                 pretty_if(options, cond, if_true, if_false)
             },
-            Term::RecordType(_, ref label, ref ann, ref rest) => {
+            Term::RecordType(_, ref scope) => {
                 let mut inner = Doc::nil();
-                let mut label = label;
-                let mut ann = ann;
-                let mut rest = rest;
+                let mut scope = scope;
 
                 loop {
                     inner = inner
-                        .append(Doc::as_string(&label.0))
+                        .append(pretty_name(options, &(scope.unsafe_pattern.0).0))
                         .append(Doc::space())
                         .append(Doc::text(":"))
                         .append(Doc::space())
-                        .append(ann.to_doc(options));
+                        .append((scope.unsafe_pattern.1).0.to_doc(options));
 
-                    match **rest {
-                        Term::RecordType(_, ref next_label, ref next_ann, ref next_rest) => {
-                            label = next_label;
-                            ann = next_ann;
-                            rest = next_rest;
-                        },
+                    match *scope.unsafe_body {
+                        Term::RecordType(_, ref next_scope) => scope = next_scope,
                         Term::EmptyRecordType(_) => break,
                         _ => panic!("ill-formed record"),
                     }
@@ -351,26 +333,20 @@ impl ToDoc for Term {
 
                 pretty_record_ty(inner)
             },
-            Term::Record(_, ref label, ref expr, ref rest) => {
+            Term::Record(_, ref scope) => {
                 let mut inner = Doc::nil();
-                let mut label = label;
-                let mut expr = expr;
-                let mut rest = rest;
+                let mut scope = scope;
 
                 loop {
                     inner = inner
-                        .append(Doc::as_string(&label.0))
+                        .append(pretty_name(options, &(scope.unsafe_pattern.0).0))
                         .append(Doc::space())
                         .append(Doc::text("="))
                         .append(Doc::space())
-                        .append(expr.to_doc(options));
+                        .append((scope.unsafe_pattern.1).0.to_doc(options));
 
-                    match **rest {
-                        Term::Record(_, ref next_label, ref next_expr, ref next_rest) => {
-                            label = next_label;
-                            expr = next_expr;
-                            rest = next_rest;
-                        },
+                    match *scope.unsafe_body {
+                        Term::Record(_, ref next_scope) => scope = next_scope,
                         Term::EmptyRecord(_) => break,
                         _ => panic!("ill-formed record"),
                     }
@@ -402,26 +378,20 @@ impl ToDoc for Value {
                 &(scope.unsafe_pattern.1).0,
                 &scope.unsafe_body,
             ),
-            Value::RecordType(ref label, ref ann, ref rest) => {
+            Value::RecordType(ref scope) => {
                 let mut inner = Doc::nil();
-                let mut label = label;
-                let mut ann = ann;
-                let mut rest = rest;
+                let mut scope = scope;
 
                 loop {
                     inner = inner
-                        .append(Doc::as_string(&label.0))
+                        .append(pretty_name(options, &(scope.unsafe_pattern.0).0))
                         .append(Doc::space())
                         .append(Doc::text(":"))
                         .append(Doc::space())
-                        .append(ann.to_doc(options));
+                        .append((scope.unsafe_pattern.1).0.to_doc(options));
 
-                    match **rest {
-                        Value::RecordType(ref next_label, ref next_ann, ref next_rest) => {
-                            label = next_label;
-                            ann = next_ann;
-                            rest = next_rest;
-                        },
+                    match *scope.unsafe_body {
+                        Value::RecordType(ref next_scope) => scope = next_scope,
                         Value::EmptyRecordType => break,
                         _ => panic!("ill-formed record"),
                     }
@@ -429,26 +399,20 @@ impl ToDoc for Value {
 
                 pretty_record_ty(inner)
             },
-            Value::Record(ref label, ref expr, ref rest) => {
+            Value::Record(ref scope) => {
                 let mut inner = Doc::nil();
-                let mut label = label;
-                let mut expr = expr;
-                let mut rest = rest;
+                let mut scope = scope;
 
                 loop {
                     inner = inner
-                        .append(Doc::as_string(&label.0))
+                        .append(pretty_name(options, &(scope.unsafe_pattern.0).0))
                         .append(Doc::space())
                         .append(Doc::text("="))
                         .append(Doc::space())
-                        .append(expr.to_doc(options));
+                        .append((scope.unsafe_pattern.1).0.to_doc(options));
 
-                    match **rest {
-                        Value::Record(ref next_label, ref next_expr, ref next_rest) => {
-                            label = next_label;
-                            expr = next_expr;
-                            rest = next_rest;
-                        },
+                    match *scope.unsafe_body {
+                        Value::Record(ref next_scope) => scope = next_scope,
                         Value::EmptyRecord => break,
                         _ => panic!("ill-formed record"),
                     }

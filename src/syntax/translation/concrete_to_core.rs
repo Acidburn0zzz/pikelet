@@ -98,9 +98,13 @@ fn record_ty_to_core(
     for &(start, ref label, ref ann) in fields.iter().rev() {
         term = core::RawTerm::RecordType(
             Ignore(ByteSpan::new(start, term.span().end())),
-            core::Label(label.clone()),
-            Rc::new(ann.to_core()),
-            Rc::new(term),
+            nameless::bind(
+                (
+                    core::Label(Name::user(label.clone())),
+                    Embed(Rc::new(ann.to_core())),
+                ),
+                Rc::new(term),
+            ),
         );
     }
 
@@ -116,9 +120,13 @@ fn record_to_core(
     for &(start, ref label, ref value) in fields.iter().rev() {
         term = core::RawTerm::Record(
             Ignore(ByteSpan::new(start, term.span().end())),
-            core::Label(label.clone()),
-            Rc::new(value.to_core()),
-            Rc::new(term),
+            nameless::bind(
+                (
+                    core::Label(Name::user(label.clone())),
+                    Embed(Rc::new(value.to_core())),
+                ),
+                Rc::new(term),
+            ),
         );
     }
 
@@ -270,7 +278,7 @@ impl ToCore<core::RawTerm> for concrete::Term {
                     span,
                     Rc::new(tm.to_core()),
                     label_span,
-                    core::Label(label.clone()),
+                    core::Label(Name::user(label.clone())),
                 )
             },
             concrete::Term::Error(_) => unimplemented!("error recovery"),

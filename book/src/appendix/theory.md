@@ -41,6 +41,7 @@ TODO: describe BNF syntax and natural deduction here
 \\DeclareMathOperator{\max}{max}
 \\DeclareMathOperator{\field}{field}
 \\DeclareMathOperator{\fieldty}{fieldty}
+\\DeclareMathOperator{\fieldsubst}{fieldsubst}
 \\
 % Judgements
 \\newcommand{\eval}[3]{ #1 \vdash #2 \Rightarrow #3 }
@@ -322,17 +323,17 @@ in the context.
     \rule{E-RECORD-TYPE}{
         \eval{ \Gamma }{ \ttype_1 }{ \vtype_1 }
         \qquad
-        \eval{ \Gamma }{ \ttype_2 }{ \vtype_2 }
+        \eval{ \Gamma, x:\vtype_1 }{ \ttype_2 }{ \vtype_2 }
     }{
-        \eval{ \Gamma }{ \Record{l:\ttype_1, \ttype_2} }{ \Record{l:\vtype_1, \vtype_2} }
+        \eval{ \Gamma }{ \Record{x:\ttype_1, \ttype_2} }{ \Record{x:\vtype_1, \vtype_2} }
     }
     \\\\[2em]
     \rule{E-RECORD}{
         \eval{ \Gamma }{ \texpr_1 }{ \vexpr_1 }
         \qquad
-        \eval{ \Gamma }{ \texpr_2 }{ \vexpr_2 }
+        \eval{ \Gamma, x=\texpr_1 }{ \texpr_2 }{ \vexpr_2 }
     }{
-        \eval{ \Gamma }{ \record{l=\texpr_1, \texpr_2} }{ \record{l=\vexpr_1, \vexpr_2} }
+        \eval{ \Gamma }{ \record{x=\texpr_1, \texpr_2} }{ \record{x=\vexpr_1, \vexpr_2} }
     }
     \\\\[2em]
     \rule{E-EMPTY-RECORD-TYPE}{}{
@@ -395,9 +396,9 @@ elaborated form.
         \qquad
         \check{ \Gamma }{ \rexpr_1 }{ \vtype_1 }{ \texpr_1 }
         \qquad
-        \check{ \Gamma }{ \rexpr_2 }{ \vtype_2 }{ \texpr_2 }
+        \check{ \Gamma, x:\vtype_1, x=\texpr_1 }{ \rexpr_2 }{ \vtype_2 }{ \texpr_2 }
     }{
-        \check{ \Gamma }{ \record{l_1=\rexpr_1, \rexpr_2} }{ \Record{l_2:\vtype_1, \vtype_2} }{ \record{l_1=\texpr_1, \texpr_2} }
+        \check{ \Gamma }{ \record{x=\rexpr_1, \rexpr_2} }{ \Record{x:\vtype_1, \vtype_2} }{ \record{x=\texpr_1, \texpr_2} }
     }
     \\\\[2em]
     \rule{C-CONV}{
@@ -494,17 +495,11 @@ returns its elaborated form.
     \rule{I-RECORD-TYPE}{
         \infer{ \Gamma }{ \rtype_1 }{ \Type_i }{ \ttype_1 }
         \qquad
-        \infer{ \Gamma }{ \rtype_2 }{ \Type_j }{ \ttype_2 }
-    }{
-        \infer{ \Gamma }{ \Record{l:\rtype_1, \rtype_2} }{ \Type_{\max(i,j)} }{ \Record{l:\ttype_1, \ttype_2} }
-    }
-    \\\\[2em]
-    \rule{I-RECORD}{
-        \infer{ \Gamma }{ \rexpr_1 }{ \vtype_1 }{ \texpr_1 }
+        \eval{ \Gamma }{ \ttype_1 }{ \vtype_1 }
         \qquad
-        \infer{ \Gamma }{ \rexpr_2 }{ \vtype_2 }{ \texpr_2 }
+        \infer{ \Gamma, x:\vtype_1 }{ \rtype_2 }{ \Type_j }{ \ttype_2 }
     }{
-        \infer{ \Gamma }{ \record{l=\rexpr_1, \rexpr_2} }{ \Record{l:\vtype_1, \vtype_2} }{ \record{l=\texpr_1, \texpr_2} }
+        \infer{ \Gamma }{ \Record{x:\rtype_1, \rtype_2} }{ \Type_{\max(i,j)} }{ \Record{x:\ttype_1, \ttype_2} }
     }
     \\\\[2em]
     \rule{I-EMPTY-RECORD-TYPE}{}{

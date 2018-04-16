@@ -381,11 +381,11 @@ fn empty_record() {
 }
 
 #[test]
-fn record_ty() {
+fn dependent_record_ty() {
     let context = Context::default();
 
     let expected_ty = r"Type 2";
-    let given_expr = r"Record { t : Type 1, x : String }";
+    let given_expr = r"Record { t : Type 1, x : t }";
 
     assert_term_eq!(
         infer(&context, &parse(given_expr)).unwrap().1,
@@ -397,13 +397,12 @@ fn record_ty() {
 fn record() {
     let context = Context::default();
 
-    let expected_ty = r"Record { t : Type, x : String }";
-    let given_expr = r#"record { t = String, x = "hello" }"#;
+    let given_expr = r#"record { x = "Hello" }"#;
 
-    assert_term_eq!(
-        infer(&context, &parse(given_expr)).unwrap().1,
-        normalize(&context, &parse_infer(&context, expected_ty)).unwrap(),
-    );
+    match infer(&context, &parse(given_expr)) {
+        Err(TypeError::AmbiguousRecord { .. }) => {},
+        x => panic!("expected an ambiguous record error, found {:?}", x),
+    }
 }
 
 #[test]
@@ -411,7 +410,7 @@ fn proj() {
     let context = Context::default();
 
     let expected_ty = r"String";
-    let given_expr = r#"record { t = String, x = "hello" }.x"#;
+    let given_expr = r#"(record { t = String, x = "hello" } : Record { t : Type, x : String }).x"#;
 
     assert_term_eq!(
         infer(&context, &parse(given_expr)).unwrap().1,
@@ -421,12 +420,32 @@ fn proj() {
 
 #[test]
 fn proj_missing() {
-    let context = Context::new();
+    let context = Context::default();
 
-    let given_expr = r#"record { x = "hello" }.bloop"#;
+    let given_expr = r#"(record { x = "hello" } : Record { x : String }).bloop"#;
 
     match infer(&context, &parse(given_expr)) {
         Err(TypeError::NoFieldInType { .. }) => {},
         x => panic!("expected a field lookup error, found {:?}", x),
     }
+}
+
+#[test]
+fn proj_weird() {
+    let context = Context::default();
+
+    let expected_ty = r"Type 1";
+    let given_expr = r"Record {
+            Array : U16 -> Type -> Type,
+            t : Record { n : U16, x : Array n I8, y : Array n I8 },
+            inner-prod : (len : U16) -> Array len I8 -> Array len I8 -> I32,
+
+            test1 : I32 -> Type,
+            test2 : test1 (inner-prod t.n t.x t.y),
+        }";
+
+    assert_term_eq!(
+        infer(&context, &parse(given_expr)).unwrap().1,
+        normalize(&context, &parse_infer(&context, expected_ty)).unwrap(),
+    );
 }
