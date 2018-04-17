@@ -258,6 +258,7 @@ impl ToCore<core::RawTerm> for concrete::Term {
                 Rc::new(if_true.to_core()),
                 Rc::new(if_false.to_core()),
             ),
+            concrete::Term::Case(_, _, _) => unimplemented!("case expressions"),
             concrete::Term::RecordType(span, ref fields) => record_ty_to_core(span, fields),
             concrete::Term::Record(span, ref fields) => record_to_core(span, fields),
             concrete::Term::Proj(ref tm, label_start, ref label) => {

@@ -183,6 +183,7 @@ impl ToDoc for Term {
                 .append(Doc::text("else"))
                 .append(Doc::space())
                 .append(if_false.to_doc(options)),
+            Term::Case(_, _, _) => unimplemented!("case expressions"),
             Term::RecordType(_, ref fields) if fields.is_empty() => Doc::text("Record {}"),
             Term::Record(_, ref fields) if fields.is_empty() => Doc::text("record {}"),
             Term::RecordType(_, ref fields) => Doc::text("Record {")

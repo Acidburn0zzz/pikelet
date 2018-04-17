@@ -12,43 +12,26 @@ mod lexer;
 pub use self::errors::{ExpectedTokens, ParseError};
 pub use self::lexer::{LexerError, Token};
 
-// TODO: DRY up these wrappers...
-
-pub fn repl_command<'input>(filemap: &'input FileMap) -> (concrete::ReplCommand, Vec<ParseError>) {
-    let mut errors = Vec::new();
-    let lexer = Lexer::new(filemap).map(|x| x.map_err(ParseError::from));
-    match grammar::ReplCommandParser::new().parse(&mut errors, filemap, lexer) {
-        Ok(value) => (value, errors),
-        Err(err) => {
-            errors.push(errors::from_lalrpop(filemap, err));
-            (concrete::ReplCommand::Error(filemap.span()), errors)
-        },
-    }
+macro_rules! parser {
+    ($name:ident, $output:ident, $parser_name:ident) => {
+        pub fn $name<'input>(filemap: &'input FileMap) -> (concrete::$output, Vec<ParseError>) {
+            let mut errors = Vec::new();
+            let lexer = Lexer::new(filemap).map(|x| x.map_err(ParseError::from));
+            match grammar::$parser_name::new().parse(&mut errors, filemap, lexer) {
+                Ok(value) => (value, errors),
+                Err(err) => {
+                    errors.push(errors::from_lalrpop(filemap, err));
+                    (concrete::$output::Error(filemap.span()), errors)
+                },
+            }
+        }
+    };
 }
 
-pub fn module<'input>(filemap: &'input FileMap) -> (concrete::Module, Vec<ParseError>) {
-    let mut errors = Vec::new();
-    let lexer = Lexer::new(filemap).map(|x| x.map_err(ParseError::from));
-    match grammar::ModuleParser::new().parse(&mut errors, filemap, lexer) {
-        Ok(value) => (value, errors),
-        Err(err) => {
-            errors.push(errors::from_lalrpop(filemap, err));
-            (concrete::Module::Error(filemap.span()), errors)
-        },
-    }
-}
-
-pub fn term<'input>(filemap: &'input FileMap) -> (concrete::Term, Vec<ParseError>) {
-    let mut errors = Vec::new();
-    let lexer = Lexer::new(filemap).map(|x| x.map_err(ParseError::from));
-    match grammar::TermParser::new().parse(&mut errors, filemap, lexer) {
-        Ok(value) => (value, errors),
-        Err(err) => {
-            errors.push(errors::from_lalrpop(filemap, err));
-            (concrete::Term::Error(filemap.span()), errors)
-        },
-    }
-}
+parser!(repl_command, ReplCommand, ReplCommandParser);
+parser!(module, Module, ModuleParser);
+parser!(pattern, Pattern, PatternParser);
+parser!(term, Term, TermParser);
 
 mod grammar {
     include!(concat!(env!("OUT_DIR"), "/syntax/parse/grammar.rs"));

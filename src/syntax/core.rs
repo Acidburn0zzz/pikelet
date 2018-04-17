@@ -26,11 +26,6 @@ impl fmt::Display for Level {
 }
 
 /// Raw primitive constants
-///
-/// These are either the literal values or the types that describe them.
-///
-/// We could church encode all the things, but that would be prohibitively
-/// expensive computationally!
 #[derive(Debug, Clone, PartialEq, PartialOrd, BoundTerm)]
 pub enum RawConstant {
     String(String),
@@ -133,6 +128,12 @@ impl fmt::Display for Label {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, BoundTerm)]
+pub enum RawPattern {
+    Literal(Ignore<ByteSpan>, RawConstant),
+    Var(Ignore<ByteSpan>, Var),
 }
 
 /// Raw terms, unchecked and with implicit syntax that needs to be elaborated
@@ -281,6 +282,12 @@ pub struct Definition {
     pub term: Rc<Term>,
     /// The type of the definition
     pub ann: Rc<Type>,
+}
+
+#[derive(Debug, Clone, PartialEq, BoundTerm)]
+pub enum Pattern {
+    Literal(Ignore<ByteSpan>, Constant),
+    Var(Ignore<ByteSpan>, Var),
 }
 
 /// The core term syntax

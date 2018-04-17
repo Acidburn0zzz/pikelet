@@ -190,6 +190,23 @@ pub enum Literal {
     Float(f64),
 }
 
+/// Patterns
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    /// Literal value
+    Literal(ByteSpan, Literal),
+    /// Variable
+    ///
+    /// ```text
+    /// x
+    /// ```
+    Var(ByteIndex, String),
+    /// Terms that could not be correctly parsed
+    ///
+    /// This is used for error recovery
+    Error(ByteSpan),
+}
+
 /// Terms
 #[derive(Debug, Clone, PartialEq)]
 pub enum Term {
@@ -269,6 +286,12 @@ pub enum Term {
     /// if t1 then t2 else t3
     /// ```
     If(ByteIndex, Box<Term>, Box<Term>, Box<Term>),
+    /// Case expression
+    ///
+    /// ```text
+    /// case t1 of { pat => t2; .. }
+    /// ```
+    Case(ByteSpan, Box<Term>, Vec<(Pattern, Term)>),
     /// Record type
     ///
     /// ```text
@@ -301,6 +324,7 @@ impl Term {
             | Term::Universe(span, _)
             | Term::Literal(span, _)
             | Term::Hole(span)
+            | Term::Case(span, _, _)
             | Term::RecordType(span, _)
             | Term::Record(span, _)
             | Term::Error(span) => span,
