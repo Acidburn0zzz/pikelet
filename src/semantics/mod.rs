@@ -82,27 +82,10 @@ pub fn normalize(context: &Context, term: &Rc<Term>) -> Result<Rc<Value>, Intern
         },
 
         // E-PI
-        Term::Pi(_, ref scope) => {
-            let ((name, Embed(ann)), body) = nameless::unbind(scope.clone());
-
-            let ann = normalize(context, &ann)?;
-            let body = normalize(&context.claim(name.clone(), ann.clone()), &body)?;
-
-            Ok(Rc::new(Value::Pi(nameless::bind((name, Embed(ann)), body))))
-        },
+        Term::Pi(_, ref scope) => Ok(Rc::new(Value::Pi(scope.clone()))),
 
         // E-LAM
-        Term::Lam(_, ref scope) => {
-            let ((name, Embed(ann)), body) = nameless::unbind(scope.clone());
-
-            let ann = normalize(context, &ann)?;
-            let body = normalize(&context.claim(name.clone(), ann.clone()), &body)?;
-
-            Ok(Rc::new(Value::Lam(nameless::bind(
-                (name, Embed(ann)),
-                body,
-            ))))
-        },
+        Term::Lam(_, ref scope) => Ok(Rc::new(Value::Lam(scope.clone()))),
 
         // E-APP
         Term::App(ref expr, ref arg) => {
@@ -114,8 +97,11 @@ pub fn normalize(context: &Context, term: &Rc<Term>) -> Result<Rc<Value>, Intern
                     let ((name, Embed(_)), body) = nameless::unbind(scope.clone());
 
                     normalize(
-                        &context.define(name, arg.clone()),
-                        &Rc::new(Term::from(&*body)),
+                        context,
+                        &Rc::new(Term::Subst(nameless::bind(
+                            (name, Embed(arg.clone())),
+                            body,
+                        ))),
                     )
                 },
                 Value::Neutral(ref expr) => Ok(Rc::new(Value::from(Neutral::App(
@@ -124,6 +110,13 @@ pub fn normalize(context: &Context, term: &Rc<Term>) -> Result<Rc<Value>, Intern
                 )))),
                 _ => Err(InternalError::ArgumentAppliedToNonFunction { span: expr.span() }),
             }
+        },
+
+        // E-SUBST
+        Term::Subst(ref scope) => {
+            let ((name, Embed(subst_term)), body) = nameless::unbind(scope.clone());
+            let body = normalize(&context.define(name.clone(), subst_term.clone()), &body)?;
+            Ok(push_substs(context, body, name, subst_term))
         },
 
         // E-IF, E-IF-TRUE, E-IF-FALSE
@@ -177,6 +170,82 @@ pub fn normalize(context: &Context, term: &Rc<Term>) -> Result<Rc<Value>, Intern
     }
 }
 
+pub fn push_substs(
+    _context: &Context,
+    value: Rc<Value>,
+    subst_name: Name,
+    subst_term: Rc<Term>,
+) -> Rc<Value> {
+    match *value {
+        Value::Universe(_) => {},
+        Value::Constant(_) => {},
+        Value::Pi(ref scope) => {
+            let ((name, Embed(ann)), body) = nameless::unbind(scope.clone());
+            return Rc::new(Value::Pi(nameless::bind(
+                (
+                    name,
+                    Embed(Rc::new(Term::Subst(nameless::bind(
+                        (subst_name.clone(), Embed(subst_term.clone())),
+                        ann,
+                    )))),
+                ),
+                Rc::new(Term::Subst(nameless::bind(
+                    (subst_name, Embed(subst_term)),
+                    body,
+                ))),
+            )));
+        },
+        Value::Lam(ref scope) => {
+            let ((name, Embed(ann)), body) = nameless::unbind(scope.clone());
+            return Rc::new(Value::Lam(nameless::bind(
+                (
+                    name,
+                    Embed(Rc::new(Term::Subst(nameless::bind(
+                        (subst_name.clone(), Embed(subst_term.clone())),
+                        ann,
+                    )))),
+                ),
+                Rc::new(Term::Subst(nameless::bind(
+                    (subst_name, Embed(subst_term)),
+                    body,
+                ))),
+            )));
+        },
+        Value::RecordType(_, _, _) => unimplemented!(),
+        Value::Record(_, _, _) => unimplemented!(),
+        Value::EmptyRecordType => {},
+        Value::EmptyRecord => {},
+        Value::Neutral(ref neutral) => match **neutral {
+            Neutral::Var(_) => {},
+            Neutral::App(ref expr, ref arg) => {
+                return Rc::new(Value::from(Neutral::App(
+                    expr.clone(),
+                    Rc::new(Term::Subst(nameless::bind(
+                        (subst_name, Embed(subst_term)),
+                        arg.clone(),
+                    ))),
+                )));
+            },
+            Neutral::If(ref pred, ref if_true, ref if_false) => {
+                return Rc::new(Value::from(Neutral::If(
+                    pred.clone(),
+                    Rc::new(Term::Subst(nameless::bind(
+                        (subst_name.clone(), Embed(subst_term.clone())),
+                        if_true.clone(),
+                    ))),
+                    Rc::new(Term::Subst(nameless::bind(
+                        (subst_name, Embed(subst_term)),
+                        if_false.clone(),
+                    ))),
+                )));
+            },
+            Neutral::Proj(_, _) => {},
+        },
+    }
+
+    value
+}
+
 /// Type checking of terms
 pub fn check(
     context: &Context,
@@ -224,11 +293,14 @@ pub fn check(
 
             // Elaborate the hole, if it exists
             if let RawTerm::Hole(_) = *lam_ann {
-                let lam_ann = Rc::new(Term::from(&*pi_ann));
-                let lam_body = check(&context.claim(pi_name, pi_ann), &lam_body, &pi_body)?;
-                let lam_scope = nameless::bind((lam_name, Embed(lam_ann)), lam_body);
+                let lam_ann = normalize(context, &pi_ann)?;
+                let pi_body = normalize(context, &pi_body)?;
+                let lam_body = check(&context.claim(pi_name, lam_ann), &lam_body, &pi_body)?;
 
-                return Ok(Rc::new(Term::Lam(span, lam_scope)));
+                return Ok(Rc::new(Term::Lam(
+                    span,
+                    nameless::bind((lam_name, Embed(pi_ann)), lam_body),
+                )));
             }
 
             // TODO: We might want to optimise for this case, rather than
@@ -391,28 +463,22 @@ pub fn infer(context: &Context, raw_term: &Rc<RawTerm>) -> Result<(Rc<Term>, Rc<
                 });
             }
 
-            let (lam_ann, _) = infer_universe(context, &raw_ann)?;
-            let pi_ann = normalize(context, &lam_ann)?;
-            let (lam_body, pi_body) =
-                infer(&context.claim(name.clone(), pi_ann.clone()), &raw_body)?;
-
-            let lam_param = (name.clone(), Embed(lam_ann));
-            let pi_param = (name.clone(), Embed(pi_ann));
+            let (ann, _) = infer_universe(context, &raw_ann)?;
+            let (body, body_ty) = infer(
+                &context.claim(name.clone(), normalize(context, &ann)?),
+                &raw_body,
+            )?;
 
             Ok((
-                Rc::new(Term::Lam(span, nameless::bind(lam_param, lam_body))),
-                Rc::new(Value::Pi(nameless::bind(pi_param, pi_body))),
+                Rc::new(Term::Lam(
+                    span,
+                    nameless::bind((name.clone(), Embed(ann.clone())), body),
+                )),
+                Rc::new(Value::Pi(nameless::bind(
+                    (name, Embed(ann)),
+                    Rc::new(Term::from(&*body_ty)),
+                ))),
             ))
-        },
-
-        // I-IF
-        RawTerm::If(span, ref raw_cond, ref raw_if_true, ref raw_if_false) => {
-            let bool_ty = Rc::new(Value::Constant(Constant::BoolType));
-            let cond = check(context, raw_cond, &bool_ty)?;
-            let (if_true, ty) = infer(context, raw_if_true)?;
-            let if_false = check(context, raw_if_false, &ty)?;
-
-            Ok((Rc::new(Term::If(span, cond, if_true, if_false)), ty))
         },
 
         // I-APP
@@ -423,10 +489,14 @@ pub fn infer(context: &Context, raw_term: &Rc<RawTerm>) -> Result<(Rc<Term>, Rc<
                 Value::Pi(ref scope) => {
                     let ((name, Embed(ann)), body) = nameless::unbind(scope.clone());
 
+                    let ann = normalize(context, &ann)?;
                     let arg = check(context, raw_arg, &ann)?;
                     let body = normalize(
-                        &context.define(name, arg.clone()),
-                        &Rc::new(Term::from(&*body)),
+                        context,
+                        &Rc::new(Term::Subst(nameless::bind(
+                            (name, Embed(arg.clone())),
+                            body,
+                        ))),
                     )?;
 
                     Ok((Rc::new(Term::App(expr, arg)), body))
@@ -437,6 +507,16 @@ pub fn infer(context: &Context, raw_term: &Rc<RawTerm>) -> Result<(Rc<Term>, Rc<
                     found: Box::new(Term::from(&*expr_ty).to_concrete()),
                 }),
             }
+        },
+
+        // I-IF
+        RawTerm::If(span, ref raw_cond, ref raw_if_true, ref raw_if_false) => {
+            let bool_ty = Rc::new(Value::Constant(Constant::BoolType));
+            let cond = check(context, raw_cond, &bool_ty)?;
+            let (if_true, ty) = infer(context, raw_if_true)?;
+            let if_false = check(context, raw_if_false, &ty)?;
+
+            Ok((Rc::new(Term::If(span, cond, if_true, if_false)), ty))
         },
 
         // I-RECORD-TYPE

@@ -261,6 +261,23 @@ impl ToConcrete<concrete::Term> for core::Term {
                     vec![arg.to_concrete_prec(Prec::NO_WRAP)], // TODO
                 ),
             ),
+            core::Term::Subst(ref scope) => {
+                let ((name, Embed(term)), body) = nameless::unbind(scope.clone());
+                parens_if(
+                    Prec::LAM < prec,
+                    concrete::Term::Let(
+                        ByteIndex::default(),
+                        vec![concrete::Declaration::Definition {
+                            span: ByteSpan::default(),
+                            name: name.to_string(), // TODO: avoid names
+                            params: vec![],         // TODO: pull names from lambdas
+                            body: term.to_concrete_prec(Prec::NO_WRAP),
+                            wheres: vec![], // TODO
+                        }],
+                        Box::new(body.to_concrete_prec(Prec::LAM)),
+                    ),
+                )
+            },
             core::Term::If(_, ref cond, ref if_true, ref if_false) => parens_if(
                 Prec::LAM < prec,
                 concrete::Term::If(

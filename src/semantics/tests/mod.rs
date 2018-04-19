@@ -28,6 +28,7 @@ fn parse_infer(context: &Context, src: &str) -> Rc<Term> {
     infer(context, &parse(src)).unwrap().0
 }
 
+mod check;
 mod check_module;
 mod infer;
 mod normalize;
