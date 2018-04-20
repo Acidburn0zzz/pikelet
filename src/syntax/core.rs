@@ -420,9 +420,9 @@ pub enum Value {
     /// Constants
     Constant(Constant),
     /// A pi type
-    Pi(Bind<(Name, Embed<Rc<Term>>), Rc<Term>>),
+    Pi(Bind<(Name, Embed<Rc<Value>>), Rc<Value>>),
     /// A lambda abstraction
-    Lam(Bind<(Name, Embed<Rc<Term>>), Rc<Term>>),
+    Lam(Bind<(Name, Embed<Rc<Value>>), Rc<Value>>),
     /// Dependent record types
     RecordType(Label, Rc<Value>, Rc<Value>),
     /// Dependent record
@@ -500,7 +500,7 @@ pub enum Neutral {
     /// Variables
     Var(Var),
     /// RawTerm application
-    App(Rc<Neutral>, Rc<Term>),
+    App(Rc<Neutral>, Rc<Value>),
     /// If expression
     If(Rc<Neutral>, Rc<Term>, Rc<Term>),
     /// Field projection
@@ -531,15 +531,21 @@ impl<'a> From<&'a Value> for Term {
             Value::Constant(ref c) => Term::Constant(Ignore::default(), c.clone()),
             Value::Pi(ref scope) => {
                 let ((name, Embed(param_ann)), body) = nameless::unbind(scope.clone());
-                let param = (name, Embed(param_ann.clone()));
+                let param = (name, Embed(Rc::new(Term::from(&*param_ann))));
 
-                Term::Pi(Ignore::default(), nameless::bind(param, body.clone()))
+                Term::Pi(
+                    Ignore::default(),
+                    nameless::bind(param, Rc::new(Term::from(&*body))),
+                )
             },
             Value::Lam(ref scope) => {
                 let ((name, Embed(param_ann)), body) = nameless::unbind(scope.clone());
-                let param = (name, Embed(param_ann.clone()));
+                let param = (name, Embed(Rc::new(Term::from(&*param_ann))));
 
-                Term::Lam(Ignore::default(), nameless::bind(param, body.clone()))
+                Term::Lam(
+                    Ignore::default(),
+                    nameless::bind(param, Rc::new(Term::from(&*body))),
+                )
             },
             Value::RecordType(ref label, ref ann, ref rest) => Term::RecordType(
                 Ignore::default(),
@@ -564,9 +570,10 @@ impl<'a> From<&'a Neutral> for Term {
     fn from(src: &'a Neutral) -> Term {
         match *src {
             Neutral::Var(ref var) => Term::Var(Ignore::default(), var.clone()),
-            Neutral::App(ref fn_expr, ref arg_expr) => {
-                Term::App(Rc::new(Term::from(&**fn_expr)), arg_expr.clone())
-            },
+            Neutral::App(ref fn_expr, ref arg_expr) => Term::App(
+                Rc::new(Term::from(&**fn_expr)),
+                Rc::new(Term::from(&**arg_expr)),
+            ),
             Neutral::If(ref cond, ref if_true, ref if_false) => Term::If(
                 Ignore::default(),
                 Rc::new(Term::from(&**cond)),

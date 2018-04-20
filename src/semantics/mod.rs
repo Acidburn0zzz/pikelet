@@ -82,10 +82,25 @@ pub fn normalize(context: &Context, term: &Rc<Term>) -> Result<Rc<Value>, Intern
         },
 
         // E-PI
-        Term::Pi(_, ref scope) => Ok(Rc::new(Value::Pi(scope.clone()))),
+        Term::Pi(_, ref scope) => {
+            let ((name, Embed(ann)), body) = nameless::unbind(scope.clone());
+            let ann = normalize(context, &ann)?;
+            let body = normalize(context, &body)?;
+
+            Ok(Rc::new(Value::Pi(nameless::bind((name, Embed(ann)), body))))
+        },
 
         // E-LAM
-        Term::Lam(_, ref scope) => Ok(Rc::new(Value::Lam(scope.clone()))),
+        Term::Lam(_, ref scope) => {
+            let ((name, Embed(ann)), body) = nameless::unbind(scope.clone());
+            let ann = normalize(context, &ann)?;
+            let body = normalize(context, &body)?;
+
+            Ok(Rc::new(Value::Lam(nameless::bind(
+                (name, Embed(ann)),
+                body,
+            ))))
+        },
 
         // E-APP
         Term::App(ref expr, ref arg) => {
@@ -100,13 +115,13 @@ pub fn normalize(context: &Context, term: &Rc<Term>) -> Result<Rc<Value>, Intern
                         context,
                         &Rc::new(Term::Subst(nameless::bind(
                             (name, Embed(arg.clone())),
-                            body,
+                            Rc::new(Term::from(&*body)),
                         ))),
                     )
                 },
                 Value::Neutral(ref expr) => Ok(Rc::new(Value::from(Neutral::App(
                     expr.clone(),
-                    arg.clone(),
+                    normalize(context, arg)?,
                 )))),
                 _ => Err(InternalError::ArgumentAppliedToNonFunction { span: expr.span() }),
             }
@@ -184,15 +199,14 @@ pub fn push_substs(
             return Rc::new(Value::Pi(nameless::bind(
                 (
                     name,
-                    Embed(Rc::new(Term::Subst(nameless::bind(
-                        (subst_name.clone(), Embed(subst_term.clone())),
+                    Embed(push_substs(
+                        context,
                         ann,
-                    )))),
+                        subst_name.clone(),
+                        subst_term.clone(),
+                    )),
                 ),
-                Rc::new(Term::Subst(nameless::bind(
-                    (subst_name, Embed(subst_term)),
-                    body,
-                ))),
+                push_substs(context, body, subst_name, subst_term),
             )));
         },
         Value::Lam(ref scope) => {
@@ -200,15 +214,14 @@ pub fn push_substs(
             return Rc::new(Value::Lam(nameless::bind(
                 (
                     name,
-                    Embed(Rc::new(Term::Subst(nameless::bind(
-                        (subst_name.clone(), Embed(subst_term.clone())),
+                    Embed(push_substs(
+                        context,
                         ann,
-                    )))),
+                        subst_name.clone(),
+                        subst_term.clone(),
+                    )),
                 ),
-                Rc::new(Term::Subst(nameless::bind(
-                    (subst_name, Embed(subst_term)),
-                    body,
-                ))),
+                push_substs(context, body, subst_name, subst_term),
             )));
         },
         Value::RecordType(ref label, ref ann, ref body) => {
@@ -237,10 +250,7 @@ pub fn push_substs(
             Neutral::App(ref expr, ref arg) => {
                 return Rc::new(Value::from(Neutral::App(
                     expr.clone(),
-                    Rc::new(Term::Subst(nameless::bind(
-                        (subst_name, Embed(subst_term)),
-                        arg.clone(),
-                    ))),
+                    push_substs(context, arg.clone(), subst_name, subst_term),
                 )));
             },
             Neutral::If(ref pred, ref if_true, ref if_false) => {
@@ -310,14 +320,11 @@ pub fn check(
 
             // Elaborate the hole, if it exists
             if let RawTerm::Hole(_) = *lam_ann {
-                let lam_ann = normalize(context, &pi_ann)?;
-                let pi_body = normalize(context, &pi_body)?;
-                let lam_body = check(&context.claim(pi_name, lam_ann), &lam_body, &pi_body)?;
+                let lam_ann = Rc::new(Term::from(&*pi_ann));
+                let lam_body = check(&context.claim(pi_name, pi_ann), &lam_body, &pi_body)?;
+                let lam_scope = nameless::bind((lam_name, Embed(lam_ann)), lam_body);
 
-                return Ok(Rc::new(Term::Lam(
-                    span,
-                    nameless::bind((lam_name, Embed(pi_ann)), lam_body),
-                )));
+                return Ok(Rc::new(Term::Lam(span, lam_scope)));
             }
 
             // TODO: We might want to optimise for this case, rather than
@@ -481,20 +488,15 @@ pub fn infer(context: &Context, raw_term: &Rc<RawTerm>) -> Result<(Rc<Term>, Rc<
             }
 
             let (ann, _) = infer_universe(context, &raw_ann)?;
-            let (body, body_ty) = infer(
-                &context.claim(name.clone(), normalize(context, &ann)?),
-                &raw_body,
-            )?;
+            let ann2 = normalize(context, &ann)?;
+            let (body, body_ty) = infer(&context.claim(name.clone(), ann2.clone()), &raw_body)?;
 
             Ok((
                 Rc::new(Term::Lam(
                     span,
-                    nameless::bind((name.clone(), Embed(ann.clone())), body),
+                    nameless::bind((name.clone(), Embed(ann)), body),
                 )),
-                Rc::new(Value::Pi(nameless::bind(
-                    (name, Embed(ann)),
-                    Rc::new(Term::from(&*body_ty)),
-                ))),
+                Rc::new(Value::Pi(nameless::bind((name, Embed(ann2)), body_ty))),
             ))
         },
 
@@ -506,13 +508,13 @@ pub fn infer(context: &Context, raw_term: &Rc<RawTerm>) -> Result<(Rc<Term>, Rc<
                 Value::Pi(ref scope) => {
                     let ((name, Embed(ann)), body) = nameless::unbind(scope.clone());
 
-                    let ann = normalize(context, &ann)?;
+                    let ann = normalize(context, &Rc::new(Term::from(&*ann)))?;
                     let arg = check(context, raw_arg, &ann)?;
                     let body = normalize(
                         context,
                         &Rc::new(Term::Subst(nameless::bind(
                             (name, Embed(arg.clone())),
-                            body,
+                            Rc::new(Term::from(&*body)),
                         ))),
                     )?;
 
