@@ -171,7 +171,7 @@ pub fn normalize(context: &Context, term: &Rc<Term>) -> Result<Rc<Value>, Intern
 }
 
 pub fn push_substs(
-    _context: &Context,
+    context: &Context,
     value: Rc<Value>,
     subst_name: Name,
     subst_term: Rc<Term>,
@@ -211,8 +211,25 @@ pub fn push_substs(
                 ))),
             )));
         },
-        Value::RecordType(_, _, _) => unimplemented!(),
-        Value::Record(_, _, _) => unimplemented!(),
+        Value::RecordType(ref label, ref ann, ref body) => {
+            return Rc::new(Value::RecordType(
+                label.clone(),
+                push_substs(context, ann.clone(), subst_name.clone(), subst_term.clone()),
+                push_substs(context, body.clone(), subst_name, subst_term),
+            ));
+        },
+        Value::Record(ref label, ref expr, ref body) => {
+            return Rc::new(Value::Record(
+                label.clone(),
+                push_substs(
+                    context,
+                    expr.clone(),
+                    subst_name.clone(),
+                    subst_term.clone(),
+                ),
+                push_substs(context, body.clone(), subst_name, subst_term),
+            ));
+        },
         Value::EmptyRecordType => {},
         Value::EmptyRecord => {},
         Value::Neutral(ref neutral) => match **neutral {
